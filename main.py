@@ -604,7 +604,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     if not update.message:
         return
     await update.message.reply_text(
-        "Готово. Откройте мини-приложение кнопкой ниже.",
+        "Откройте мини-приложение кнопкой ниже.",
         reply_markup=build_webapp_keyboard(),
     )
 

@@ -1,7 +1,30 @@
 const tg = window.Telegram?.WebApp ?? null;
-const telegramUser = tg?.initDataUnsafe?.user ?? null;
-const initData = tg?.initData ?? "";
-const userId = telegramUser?.id ? String(telegramUser.id) : "guest";
+const initDataFromHash = new URLSearchParams(window.location.hash.slice(1)).get("tgWebAppData") || "";
+const initData = tg?.initData || initDataFromHash;
+
+function parseUserFromInitData(rawInitData) {
+  if (!rawInitData) return null;
+  try {
+    const params = new URLSearchParams(rawInitData);
+    const userRaw = params.get("user");
+    if (!userRaw) return null;
+    const user = JSON.parse(userRaw);
+    if (!user || typeof user.id === "undefined") return null;
+    return user;
+  } catch {
+    return null;
+  }
+}
+
+const initDataUser = parseUserFromInitData(initData);
+let backendProfileUser = null;
+
+function getTelegramUser() {
+  return tg?.initDataUnsafe?.user ?? initDataUser ?? backendProfileUser;
+}
+
+const startupTelegramUser = getTelegramUser();
+const userId = startupTelegramUser?.id ? String(startupTelegramUser.id) : "guest";
 
 const queryApi = new URLSearchParams(window.location.search).get("api") || "";
 const defaultApi = window.location.hostname.endsWith("github.io") ? "" : window.location.origin;
@@ -31,7 +54,6 @@ const timezoneMap = new Map(RU_TIMEZONES.map((zone) => [zone.id, zone.label]));
 const ui = {
   userLabel: document.getElementById("user-label"),
   greetingText: document.getElementById("greeting-text"),
-  modeHint: document.getElementById("mode-hint"),
   clockTime: document.getElementById("clock-time"),
   clockDate: document.getElementById("clock-date"),
   timezoneSelect: document.getElementById("timezone-select"),
@@ -127,18 +149,20 @@ function getGreeting(timezone) {
 }
 
 function updateProfileAndGreeting() {
-  if (!telegramUser) {
-    ui.userLabel.textContent = "Локальный режим (без Telegram профиля)";
+  const user = getTelegramUser();
+  const username = user?.username ? `@${user.username}` : "";
+  const fullName = [user?.first_name, user?.last_name].filter(Boolean).join(" ").trim();
+
+  if (ui.userLabel) {
+    ui.userLabel.textContent = username || fullName || "";
+  }
+
+  if (!user) {
     ui.greetingText.textContent = getGreeting(state.settings.timezone);
     return;
   }
 
-  const fullName = [telegramUser.first_name, telegramUser.last_name].filter(Boolean).join(" ").trim();
-  const username = telegramUser.username ? `@${telegramUser.username}` : "";
-  ui.userLabel.textContent = fullName
-    ? `${fullName} ${username}`.trim()
-    : `Пользователь ID: ${telegramUser.id}`;
-  const nickname = username || telegramUser.first_name || `ID ${telegramUser.id}`;
+  const nickname = username || user.first_name || `ID ${user.id}`;
   ui.greetingText.textContent = `${getGreeting(state.settings.timezone)} ${nickname}`;
 }
 
@@ -348,10 +372,7 @@ async function loadBackendData() {
     ]);
 
     if (profileData.user) {
-      const u = profileData.user;
-      if (!telegramUser && u.first_name) {
-        ui.userLabel.textContent = [u.first_name, u.last_name].filter(Boolean).join(" ").trim();
-      }
+      backendProfileUser = profileData.user;
     }
 
     state.settings = normalizeSettings(settingsData.settings || {});
@@ -375,7 +396,7 @@ function loadLocalData() {
   applySettingsToUi();
   render();
   updateClock();
-  setSyncStatus("локально (без чата)");
+  setSyncStatus("автономно");
 }
 
 async function saveSettings() {
@@ -584,7 +605,7 @@ function bindEvents() {
     render();
     try {
       await saveSettings();
-      setSyncStatus(BACKEND_MODE ? "подключено" : "локально");
+      setSyncStatus(BACKEND_MODE ? "подключено" : "автономно");
     } catch (error) {
       showToast(error.message, true);
     }
@@ -595,7 +616,7 @@ function bindEvents() {
     ui.notifyBefore.value = String(state.settings.notifyBeforeMinutes);
     try {
       await saveSettings();
-      setSyncStatus(BACKEND_MODE ? "подключено" : "локально");
+      setSyncStatus(BACKEND_MODE ? "подключено" : "автономно");
     } catch (error) {
       showToast(error.message, true);
     }
@@ -624,9 +645,6 @@ async function init() {
   }
 
   populateTimezones();
-  ui.modeHint.textContent = BACKEND_MODE
-    ? `Режим: Telegram + backend (${API_BASE_URL})`
-    : "Режим: локальный (без backend, уведомления в чат недоступны)";
 
   if (BACKEND_MODE) {
     await loadBackendData();
