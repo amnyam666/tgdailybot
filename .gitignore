@@ -3,3 +3,4 @@ bot_token.txt
 __pycache__/
 *.pyc
 todo.sqlite3
+.bot.lock

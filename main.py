@@ -1,18 +1,22 @@
 import asyncio
+import atexit
 import hashlib
 import hmac
 import json
 import logging
 import os
+import socket
 import sqlite3
 import time
 from contextlib import closing
 from pathlib import Path
 from threading import Thread
+from typing import TextIO
 from urllib.parse import parse_qsl
 
 from flask import Flask, jsonify, request, send_from_directory
 from telegram import KeyboardButton, ReplyKeyboardMarkup, Update, WebAppInfo
+from telegram.error import Conflict
 from telegram.ext import Application, CommandHandler, ContextTypes
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -20,6 +24,7 @@ WEBAPP_DIR = BASE_DIR / "webapp"
 
 DB_PATH = os.getenv("TODO_DB_PATH", str(BASE_DIR / "todo.sqlite3"))
 TOKEN_FILE_PATH = os.getenv("TELEGRAM_BOT_TOKEN_FILE", str(BASE_DIR / "bot_token.txt"))
+LOCK_FILE_PATH = os.getenv("APP_LOCK_FILE", str(BASE_DIR / ".bot.lock"))
 
 WEB_APP_URL = os.getenv("WEB_APP_URL", "https://example.com")
 WEB_SERVER_HOST = os.getenv("WEB_SERVER_HOST", "127.0.0.1")
@@ -27,6 +32,59 @@ WEB_SERVER_PORT = int(os.getenv("WEB_SERVER_PORT", "8080"))
 
 MAX_TASK_LENGTH = 300
 INIT_DATA_MAX_AGE_SECONDS = int(os.getenv("INIT_DATA_MAX_AGE_SECONDS", "86400"))
+
+
+def acquire_single_instance_lock(lock_file_path: str) -> TextIO:
+    lock_file = open(lock_file_path, "a+", encoding="utf-8")
+    try:
+        if os.name == "nt":
+            import msvcrt
+
+            lock_file.seek(0)
+            msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError as exc:
+        lock_file.close()
+        raise RuntimeError(
+            "Another bot instance is already running. Stop previous main.py process first."
+        ) from exc
+
+    lock_file.seek(0)
+    lock_file.truncate(0)
+    lock_file.write(str(os.getpid()))
+    lock_file.flush()
+    return lock_file
+
+
+def release_single_instance_lock(lock_file: TextIO) -> None:
+    try:
+        if os.name == "nt":
+            import msvcrt
+
+            lock_file.seek(0)
+            msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+    except OSError:
+        pass
+    finally:
+        lock_file.close()
+
+
+def ensure_web_server_port_available(host: str, port: int) -> None:
+    probe_host = "127.0.0.1" if host in {"0.0.0.0", "::"} else host
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(0.5)
+        if sock.connect_ex((probe_host, port)) == 0:
+            raise RuntimeError(
+                f"Port {port} on {probe_host} is already in use. "
+                "Stop old process or change WEB_SERVER_PORT."
+            )
 
 
 def get_connection() -> sqlite3.Connection:
@@ -305,6 +363,9 @@ async def app_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
 
 def main() -> None:
+    lock_file = acquire_single_instance_lock(LOCK_FILE_PATH)
+    atexit.register(release_single_instance_lock, lock_file)
+
     token = load_bot_token(TOKEN_FILE_PATH)
 
     logging.basicConfig(
@@ -313,6 +374,7 @@ def main() -> None:
     )
 
     init_db()
+    ensure_web_server_port_available(WEB_SERVER_HOST, WEB_SERVER_PORT)
 
     web_server = create_web_server(token)
     web_thread = Thread(target=run_web_server, args=(web_server,), daemon=True)
@@ -324,7 +386,12 @@ def main() -> None:
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("app", app_command))
-    app.run_polling(allowed_updates=Update.ALL_TYPES)
+    try:
+        app.run_polling(allowed_updates=Update.ALL_TYPES)
+    except Conflict as exc:
+        raise RuntimeError(
+            "Telegram returned 409 Conflict: another process is polling this bot token."
+        ) from exc
 
 
 if __name__ == "__main__":
