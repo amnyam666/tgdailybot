@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Список задач</title>
-  <meta name="description" content="Чистый To-Do на HTML, CSS и JavaScript для GitHub Pages">
+  <meta name="description" content="Минималистичный список задач с напоминаниями и выбором часового пояса РФ">
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
@@ -14,9 +14,44 @@
       <p id="user-label" class="subtitle">Локальный режим</p>
     </header>
 
+    <section class="card clock-panel">
+      <div>
+        <p id="clock-time" class="clock-time">--:--:--</p>
+        <p id="clock-date" class="subtitle">Дата</p>
+      </div>
+      <div class="field">
+        <label for="timezone-select">Часовой пояс</label>
+        <select id="timezone-select"></select>
+      </div>
+    </section>
+
+    <section class="card settings-panel">
+      <h2>Настройки уведомлений</h2>
+      <div class="settings-grid">
+        <label class="check-row">
+          <input id="notifications-enabled" type="checkbox">
+          <span>Включить уведомления</span>
+        </label>
+        <div class="field">
+          <label for="notify-before">Напоминать за (мин)</label>
+          <input id="notify-before" type="number" min="0" max="120" step="1" value="0">
+        </div>
+      </div>
+      <div class="settings-actions">
+        <button id="request-notify-btn" class="ghost-btn" type="button">Разрешить уведомления</button>
+        <p id="notify-permission" class="subtitle">Статус: неизвестно</p>
+      </div>
+    </section>
+
     <section class="card compose">
-      <label class="sr-only" for="task-input">Текст задачи</label>
-      <input id="task-input" type="text" maxlength="300" placeholder="Например: Позвонить клиенту в 16:00">
+      <div class="field span-2">
+        <label class="sr-only" for="task-input">Текст задачи</label>
+        <input id="task-input" type="text" maxlength="300" placeholder="Например: Позвонить клиенту в 16:00">
+      </div>
+      <div class="field">
+        <label for="reminder-input">Напоминание</label>
+        <input id="reminder-input" type="datetime-local">
+      </div>
       <button id="add-btn" type="button">Добавить</button>
     </section>
 
@@ -39,6 +74,7 @@
     </section>
   </main>
 
+  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
   <script src="./app.js"></script>
 </body>
 </html>
