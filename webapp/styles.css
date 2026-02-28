@@ -1,0 +1,143 @@
+:root {
+  color-scheme: light;
+  --bg: #f4f7fb;
+  --panel: #ffffff;
+  --text: #121826;
+  --muted: #667085;
+  --accent: #0f766e;
+  --accent-pressed: #115e59;
+  --danger: #b42318;
+  --border: #d0d5dd;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(1200px 500px at -10% -30%, #c8f3ec 0%, transparent 65%),
+    radial-gradient(900px 400px at 110% -30%, #d9eaff 0%, transparent 60%),
+    var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+}
+
+.app {
+  width: min(720px, 100%);
+  margin: 0 auto;
+  padding: 16px;
+}
+
+.app-header h1 {
+  margin: 0 0 4px 0;
+  font-size: 28px;
+}
+
+.add-task {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+input[type="text"] {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  padding: 12px 14px;
+  font-size: 16px;
+}
+
+button {
+  border: 0;
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+button:active {
+  background: var(--accent-pressed);
+}
+
+.ghost-btn {
+  background: #e6f4f2;
+  color: #134e4a;
+}
+
+.section-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 18px;
+}
+
+.section-title-row h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.tasks-list {
+  margin: 12px 0 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 8px;
+}
+
+.task-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+}
+
+.task-text {
+  word-break: break-word;
+}
+
+.task-text.done {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+
+.delete-btn {
+  background: #fee4e2;
+  color: var(--danger);
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.status {
+  margin-top: 14px;
+  min-height: 20px;
+}
+
+.hidden {
+  display: none;
+}
+
+@media (max-width: 480px) {
+  .app {
+    padding: 12px;
+  }
+
+  .app-header h1 {
+    font-size: 24px;
+  }
+
+  .add-task {
+    grid-template-columns: 1fr;
+  }
+}
