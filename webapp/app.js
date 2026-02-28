@@ -23,13 +23,13 @@ function setStatus(text, isError = false) {
 
 function setHelloText() {
   if (!tg || !tg.initDataUnsafe || !tg.initDataUnsafe.user) {
-    ui.helloText.textContent = "Open this page from Telegram mini app button.";
+    ui.helloText.textContent = "Откройте эту страницу через кнопку мини-приложения в Telegram.";
     return;
   }
 
   const user = tg.initDataUnsafe.user;
   const fullName = [user.first_name, user.last_name].filter(Boolean).join(" ").trim();
-  ui.helloText.textContent = fullName ? `Hello, ${fullName}` : `Hello, user #${user.id}`;
+  ui.helloText.textContent = fullName ? `Здравствуйте, ${fullName}` : `Здравствуйте, пользователь #${user.id}`;
 }
 
 function authHeaders() {
@@ -48,7 +48,7 @@ async function apiRequest(path, options = {}) {
 
   const data = await response.json().catch(() => ({}));
   if (!response.ok || data.ok === false) {
-    const message = data.error || `HTTP ${response.status}`;
+    const message = data.error || `Ошибка HTTP ${response.status}`;
     throw new Error(message);
   }
   return data;
@@ -74,7 +74,7 @@ function renderTasks(tasks) {
     const removeBtn = document.createElement("button");
     removeBtn.className = "delete-btn";
     removeBtn.type = "button";
-    removeBtn.textContent = "Delete";
+    removeBtn.textContent = "Удалить";
     removeBtn.addEventListener("click", () => onDeleteTask(task.id));
 
     row.appendChild(checkbox);
@@ -85,11 +85,11 @@ function renderTasks(tasks) {
 }
 
 async function loadTasks() {
-  setStatus("Loading tasks...");
+  setStatus("Загружаем задачи...");
   try {
     const result = await apiRequest("/api/tasks");
     renderTasks(result.tasks || []);
-    setStatus("Ready");
+    setStatus("Готово");
   } catch (error) {
     setStatus(error.message, true);
   }
@@ -98,11 +98,11 @@ async function loadTasks() {
 async function onAddTask() {
   const text = ui.taskInput.value.trim();
   if (!text) {
-    setStatus("Enter task text first.", true);
+    setStatus("Сначала введите текст задачи.", true);
     return;
   }
 
-  setStatus("Adding task...");
+  setStatus("Добавляем задачу...");
   try {
     await apiRequest("/api/tasks", { method: "POST", body: { text } });
     ui.taskInput.value = "";

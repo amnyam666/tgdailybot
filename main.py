@@ -49,7 +49,7 @@ def acquire_single_instance_lock(lock_file_path: str) -> TextIO:
     except OSError as exc:
         lock_file.close()
         raise RuntimeError(
-            "Another bot instance is already running. Stop previous main.py process first."
+            "Уже запущен другой экземпляр бота. Остановите предыдущий процесс main.py."
         ) from exc
 
     lock_file.seek(0)
@@ -82,8 +82,8 @@ def ensure_web_server_port_available(host: str, port: int) -> None:
         sock.settimeout(0.5)
         if sock.connect_ex((probe_host, port)) == 0:
             raise RuntimeError(
-                f"Port {port} on {probe_host} is already in use. "
-                "Stop old process or change WEB_SERVER_PORT."
+                f"Порт {port} на {probe_host} уже занят. "
+                "Остановите старый процесс или измените WEB_SERVER_PORT."
             )
 
 
@@ -135,9 +135,9 @@ def list_tasks(user_id: int) -> list[dict]:
 def add_task(user_id: int, text: str) -> dict:
     text = text.strip()
     if not text:
-        raise ValueError("Task text cannot be empty.")
+        raise ValueError("Текст задачи не может быть пустым.")
     if len(text) > MAX_TASK_LENGTH:
-        raise ValueError(f"Task is too long. Max length is {MAX_TASK_LENGTH} characters.")
+        raise ValueError(f"Задача слишком длинная. Максимум {MAX_TASK_LENGTH} символов.")
 
     with closing(get_connection()) as conn:
         cursor = conn.execute(
@@ -172,8 +172,8 @@ def delete_task(user_id: int, task_id: int) -> bool:
 def load_bot_token(token_file_path: str) -> str:
     if not os.path.exists(token_file_path):
         raise RuntimeError(
-            f"Token file not found: {token_file_path}. "
-            "Create this file and put your Telegram bot token inside."
+            f"Файл токена не найден: {token_file_path}. "
+            "Создайте файл и добавьте в него токен Telegram-бота."
         )
 
     with open(token_file_path, "r", encoding="utf-8") as token_file:
@@ -181,8 +181,8 @@ def load_bot_token(token_file_path: str) -> str:
 
     if not token or token == "PASTE_YOUR_BOT_TOKEN_HERE":
         raise RuntimeError(
-            f"Token is empty in {token_file_path}. "
-            "Replace the placeholder with real token from @BotFather."
+            f"Токен в файле {token_file_path} не задан. "
+            "Замените шаблон на реальный токен от @BotFather."
         )
     return token
 
@@ -196,12 +196,12 @@ def ensure_event_loop() -> None:
 
 def validate_telegram_init_data(init_data: str, bot_token: str) -> dict:
     if not init_data:
-        raise ValueError("Missing Telegram initData.")
+        raise ValueError("Отсутствует Telegram initData.")
 
     parsed = dict(parse_qsl(init_data, keep_blank_values=True))
     received_hash = parsed.pop("hash", None)
     if not received_hash:
-        raise ValueError("Invalid Telegram initData: hash not found.")
+        raise ValueError("Некорректный Telegram initData: отсутствует hash.")
 
     data_check_string = "\n".join(f"{key}={value}" for key, value in sorted(parsed.items()))
     secret_key = hmac.new(
@@ -216,19 +216,19 @@ def validate_telegram_init_data(init_data: str, bot_token: str) -> dict:
     ).hexdigest()
 
     if not hmac.compare_digest(received_hash, computed_hash):
-        raise ValueError("Invalid Telegram initData signature.")
+        raise ValueError("Некорректная подпись Telegram initData.")
 
     auth_date_raw = parsed.get("auth_date")
     if not auth_date_raw or not auth_date_raw.isdigit():
-        raise ValueError("Invalid Telegram initData: auth_date.")
+        raise ValueError("Некорректный Telegram initData: неверный auth_date.")
     auth_date = int(auth_date_raw)
     now = int(time.time())
     if now - auth_date > INIT_DATA_MAX_AGE_SECONDS:
-        raise ValueError("Telegram session expired. Re-open mini app.")
+        raise ValueError("Сессия Telegram истекла. Откройте мини-приложение заново.")
 
     user_json = parsed.get("user")
     if not user_json:
-        raise ValueError("Invalid Telegram initData: user not found.")
+        raise ValueError("Некорректный Telegram initData: пользователь не найден.")
 
     user = json.loads(user_json)
     user_id = int(user["id"])
@@ -295,11 +295,11 @@ def create_web_server(bot_token: str) -> Flask:
         payload = request.get_json(silent=True) or {}
         is_done = payload.get("is_done")
         if not isinstance(is_done, bool):
-            return api_error("Field 'is_done' must be boolean.", 400)
+            return api_error("Поле 'is_done' должно быть булевым значением.", 400)
 
         updated = update_task_status(user_id, task_id, is_done)
         if not updated:
-            return api_error("Task not found.", 404)
+            return api_error("Задача не найдена.", 404)
         return jsonify({"ok": True})
 
     @app.delete("/api/tasks/<int:task_id>")
@@ -311,7 +311,7 @@ def create_web_server(bot_token: str) -> Flask:
 
         deleted = delete_task(user_id, task_id)
         if not deleted:
-            return api_error("Task not found.", 404)
+            return api_error("Задача не найдена.", 404)
         return jsonify({"ok": True})
 
     return app
@@ -327,7 +327,7 @@ def run_web_server(app: Flask) -> None:
 
 
 def build_webapp_keyboard() -> ReplyKeyboardMarkup:
-    button = KeyboardButton("Open To-Do Mini App", web_app=WebAppInfo(url=WEB_APP_URL))
+    button = KeyboardButton("Открыть мини-приложение", web_app=WebAppInfo(url=WEB_APP_URL))
     return ReplyKeyboardMarkup([[button]], resize_keyboard=True)
 
 
@@ -336,8 +336,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         return
 
     await update.message.reply_text(
-        "To-Do Mini App is ready.\n"
-        "Use the button below to open your task manager.",
+        "Мини-приложение задач готово.\n"
+        "Нажмите кнопку ниже, чтобы открыть список задач.",
         reply_markup=build_webapp_keyboard(),
     )
 
@@ -346,10 +346,10 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     if not update.message:
         return
     await update.message.reply_text(
-        "Commands:\n"
-        "/start - show mini app button\n"
-        "/app - show mini app button again\n"
-        "/help - show this message"
+        "Команды:\n"
+        "/start - показать кнопку мини-приложения\n"
+        "/app - снова показать кнопку мини-приложения\n"
+        "/help - показать это сообщение"
     )
 
 
@@ -357,7 +357,7 @@ async def app_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     if not update.message:
         return
     await update.message.reply_text(
-        "Open mini app:",
+        "Открыть мини-приложение:",
         reply_markup=build_webapp_keyboard(),
     )
 
@@ -379,7 +379,7 @@ def main() -> None:
     web_server = create_web_server(token)
     web_thread = Thread(target=run_web_server, args=(web_server,), daemon=True)
     web_thread.start()
-    logging.info("Web server started at http://%s:%s", WEB_SERVER_HOST, WEB_SERVER_PORT)
+    logging.info("Веб-сервер запущен: http://%s:%s", WEB_SERVER_HOST, WEB_SERVER_PORT)
 
     ensure_event_loop()
     app = Application.builder().token(token).build()
@@ -390,7 +390,7 @@ def main() -> None:
         app.run_polling(allowed_updates=Update.ALL_TYPES)
     except Conflict as exc:
         raise RuntimeError(
-            "Telegram returned 409 Conflict: another process is polling this bot token."
+            "Telegram вернул 409 Conflict: этот токен уже используется в другом процессе."
         ) from exc
 
 

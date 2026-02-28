@@ -1,54 +1,54 @@
-# tgdailybot mini app
+# tgdailybot мини-приложение
 
-Telegram bot + Telegram Mini App for managing To-Do tasks with SQLite.
+Telegram-бот и Telegram Mini App для управления задачами с хранением в SQLite.
 
-## What is in the project
-- Telegram bot (`main.py`) with commands `/start`, `/app`, `/help`
-- Mini app frontend (`webapp/`) opened from Telegram keyboard button
-- REST API (`/api/*`) for task CRUD
-- Telegram `initData` signature validation on backend
-- SQLite storage (`todo.sqlite3`)
+## Что есть в проекте
+- бот (`main.py`) с командами `/start`, `/app`, `/help`
+- фронтенд мини-приложения (`webapp/`), который открывается кнопкой в Telegram
+- REST API (`/api/*`) для добавления, чтения, изменения и удаления задач
+- проверка подписи Telegram `initData` на backend
+- база данных SQLite (`todo.sqlite3`)
 
-## Requirements
-- Python 3.11+ (tested on 3.14)
-- Public HTTPS URL for mini app (Telegram requirement)
+## Требования
+- Python 3.11+ (проверено на 3.14)
+- публичный HTTPS URL для мини-приложения (требование Telegram)
 
-## Install
+## Установка
 ```powershell
 python -m venv .venv
 .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 ```
 
-## Configure token
-1. Create bot in `@BotFather`.
-2. Put token to `bot_token.txt` (replace placeholder line).
+## Настройка токена
+1. Создайте бота через `@BotFather`.
+2. Вставьте токен в `bot_token.txt` вместо строки-шаблона.
 
-## Configure environment
+## Переменные окружения
 ```powershell
-$env:WEB_APP_URL="https://YOUR_PUBLIC_DOMAIN"
+$env:WEB_APP_URL="https://ВАШ_ПУБЛИЧНЫЙ_ДОМЕН"
 $env:WEB_SERVER_HOST="127.0.0.1"
 $env:WEB_SERVER_PORT="8080"
 $env:TODO_DB_PATH="todo.sqlite3"
 ```
 
-Optional:
+Опционально:
 ```powershell
 $env:TELEGRAM_BOT_TOKEN_FILE="bot_token.txt"
 $env:INIT_DATA_MAX_AGE_SECONDS="86400"
 ```
 
-## Run
+## Запуск
 ```powershell
 python main.py
 ```
 
-After start:
-1. Open chat with your bot.
-2. Send `/start`.
-3. Press `Open To-Do Mini App` button.
+После запуска:
+1. Откройте чат с ботом.
+2. Отправьте `/start`.
+3. Нажмите кнопку `Открыть мини-приложение`.
 
-## Notes
-- `WEB_APP_URL` must be HTTPS and publicly reachable by Telegram clients.
-- For local development, use tunnel tools (for example, `ngrok` or `cloudflared`) and set tunnel HTTPS URL to `WEB_APP_URL`.
-- `bot_token.txt`, `.venv`, and local DB are ignored by git.
+## Важно
+- `WEB_APP_URL` должен быть HTTPS и доступен из интернета для клиентов Telegram.
+- Для локальной разработки можно использовать туннель (`ngrok` или `cloudflared`) и указать его HTTPS URL в `WEB_APP_URL`.
+- `bot_token.txt`, `.venv` и локальная БД исключены из git.
