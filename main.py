@@ -26,7 +26,7 @@ DB_PATH = os.getenv("TODO_DB_PATH", str(BASE_DIR / "todo.sqlite3"))
 TOKEN_FILE_PATH = os.getenv("TELEGRAM_BOT_TOKEN_FILE", str(BASE_DIR / "bot_token.txt"))
 LOCK_FILE_PATH = os.getenv("APP_LOCK_FILE", str(BASE_DIR / ".bot.lock"))
 
-WEB_APP_URL = os.getenv("WEB_APP_URL", "https://example.com")
+WEB_APP_URL = "https://amnyam666.github.io/tgdailybot/"
 WEB_SERVER_HOST = os.getenv("WEB_SERVER_HOST", "127.0.0.1")
 WEB_SERVER_PORT = int(os.getenv("WEB_SERVER_PORT", "8080"))
 

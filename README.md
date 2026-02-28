@@ -33,7 +33,6 @@ pip install -r requirements.txt
 
 ## Переменные окружения
 ```powershell
-$env:WEB_APP_URL="https://ВАШ_ПУБЛИЧНЫЙ_ДОМЕН"
 $env:WEB_SERVER_HOST="127.0.0.1"
 $env:WEB_SERVER_PORT="8080"
 $env:TODO_DB_PATH="todo.sqlite3"
@@ -56,6 +55,6 @@ python main.py
 3. Нажмите кнопку `Открыть мини-приложение`.
 
 ## Важно
-- `WEB_APP_URL` должен быть HTTPS и доступен из интернета для клиентов Telegram.
-- Для локальной разработки можно использовать туннель (`ngrok` или `cloudflared`) и указать его HTTPS URL в `WEB_APP_URL`.
+- По умолчанию мини-приложение открывается по адресу `https://amnyam666.github.io/tgdailybot/`.
+- Для этого бота URL мини-приложения зафиксирован в коде и не зависит от переменных окружения.
 - `bot_token.txt`, `.venv` и локальная БД исключены из git.
