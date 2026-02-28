@@ -1,6 +1,12 @@
 const tg = window.Telegram?.WebApp ?? null;
 const telegramUser = tg?.initDataUnsafe?.user ?? null;
+const initData = tg?.initData ?? "";
 const userId = telegramUser?.id ? String(telegramUser.id) : "guest";
+
+const queryApi = new URLSearchParams(window.location.search).get("api") || "";
+const defaultApi = window.location.hostname.endsWith("github.io") ? "" : window.location.origin;
+const API_BASE_URL = (queryApi || defaultApi).replace(/\/+$/, "");
+const BACKEND_MODE = Boolean(API_BASE_URL && initData);
 
 const TASKS_KEY = `todo_tasks_${userId}`;
 const SETTINGS_KEY = `todo_settings_${userId}`;
@@ -24,13 +30,14 @@ const timezoneMap = new Map(RU_TIMEZONES.map((zone) => [zone.id, zone.label]));
 
 const ui = {
   userLabel: document.getElementById("user-label"),
+  greetingText: document.getElementById("greeting-text"),
+  modeHint: document.getElementById("mode-hint"),
   clockTime: document.getElementById("clock-time"),
   clockDate: document.getElementById("clock-date"),
   timezoneSelect: document.getElementById("timezone-select"),
-  notificationsEnabled: document.getElementById("notifications-enabled"),
+  chatNotifyEnabled: document.getElementById("chat-notify-enabled"),
   notifyBefore: document.getElementById("notify-before"),
-  requestNotifyBtn: document.getElementById("request-notify-btn"),
-  notifyPermission: document.getElementById("notify-permission"),
+  syncStatus: document.getElementById("sync-status"),
   taskInput: document.getElementById("task-input"),
   reminderInput: document.getElementById("reminder-input"),
   addBtn: document.getElementById("add-btn"),
@@ -47,8 +54,8 @@ const state = {
   filter: "all",
   settings: {
     timezone: "Europe/Moscow",
-    notificationsEnabled: false,
     notifyBeforeMinutes: 0,
+    chatNotificationsEnabled: true,
   },
   toastTimer: null,
 };
@@ -64,43 +71,12 @@ function loadJson(key, fallback) {
   }
 }
 
-function saveTasks() {
+function saveTasksLocal() {
   localStorage.setItem(TASKS_KEY, JSON.stringify(state.tasks));
 }
 
-function saveSettings() {
+function saveSettingsLocal() {
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(state.settings));
-}
-
-function normalizeTask(raw) {
-  const text = typeof raw?.text === "string" ? raw.text.trim().slice(0, MAX_TEXT_LENGTH) : "";
-  if (!text) return null;
-
-  return {
-    id: typeof raw.id === "string" && raw.id ? raw.id : crypto.randomUUID(),
-    text,
-    done: Boolean(raw.done),
-    createdAt: Number(raw.createdAt) || Date.now(),
-    reminderAt: Number.isFinite(Number(raw.reminderAt)) ? Number(raw.reminderAt) : null,
-    notifiedFor: Number.isFinite(Number(raw.notifiedFor)) ? Number(raw.notifiedFor) : null,
-  };
-}
-
-function loadTasks() {
-  const rawTasks = loadJson(TASKS_KEY, []);
-  if (!Array.isArray(rawTasks)) return [];
-  return rawTasks.map(normalizeTask).filter(Boolean);
-}
-
-function loadSettings() {
-  const raw = loadJson(SETTINGS_KEY, state.settings);
-  const timezone = timezoneMap.has(raw?.timezone) ? raw.timezone : "Europe/Moscow";
-  const notifyBeforeMinutes = clampInt(raw?.notifyBeforeMinutes, 0, 120, 0);
-  return {
-    timezone,
-    notificationsEnabled: Boolean(raw?.notificationsEnabled),
-    notifyBeforeMinutes,
-  };
 }
 
 function clampInt(value, min, max, fallback) {
@@ -122,30 +98,46 @@ function escapeHtml(value) {
 
 function showToast(text, isError = false) {
   if (!ui.toast) return;
-
   ui.toast.textContent = text;
   ui.toast.classList.remove("hidden");
   ui.toast.style.background = isError ? "#a91f49" : "#1f4d84";
 
-  if (state.toastTimer) {
-    clearTimeout(state.toastTimer);
-  }
+  if (state.toastTimer) clearTimeout(state.toastTimer);
   state.toastTimer = setTimeout(() => {
     ui.toast.classList.add("hidden");
     state.toastTimer = null;
   }, 2600);
 }
 
-function formatUserLabel() {
+function getCurrentHour(timezone) {
+  const formatted = new Intl.DateTimeFormat("en-GB", {
+    timeZone: timezone,
+    hour: "2-digit",
+    hour12: false,
+  }).format(new Date());
+  return Number.parseInt(formatted, 10);
+}
+
+function getGreeting(timezone) {
+  const hour = getCurrentHour(timezone);
+  if (hour >= 5 && hour < 12) return "Доброе утро";
+  if (hour >= 12 && hour < 18) return "Добрый день";
+  return "Добрый вечер";
+}
+
+function updateProfileAndGreeting() {
   if (!telegramUser) {
     ui.userLabel.textContent = "Локальный режим (без Telegram профиля)";
+    ui.greetingText.textContent = getGreeting(state.settings.timezone);
     return;
   }
 
   const fullName = [telegramUser.first_name, telegramUser.last_name].filter(Boolean).join(" ").trim();
+  const username = telegramUser.username ? `@${telegramUser.username}` : "";
   ui.userLabel.textContent = fullName
-    ? `Пользователь: ${fullName}`
+    ? `${fullName} ${username}`.trim()
     : `Пользователь ID: ${telegramUser.id}`;
+  ui.greetingText.textContent = `${getGreeting(state.settings.timezone)}, ${telegramUser.first_name || "друг"}!`;
 }
 
 function populateTimezones() {
@@ -158,86 +150,34 @@ function populateTimezones() {
   }
 }
 
-function updatePermissionStatus() {
-  if (!("Notification" in window)) {
-    ui.notifyPermission.textContent = "Статус: браузер не поддерживает уведомления";
-    return;
-  }
+function setSyncStatus(text, isError = false) {
+  ui.syncStatus.textContent = `Синхронизация: ${text}`;
+  ui.syncStatus.style.color = isError ? "#b01d4f" : "";
+}
 
-  const map = {
-    granted: "разрешены",
-    denied: "запрещены",
-    default: "не запрошены",
+function apiHeaders() {
+  return {
+    "Content-Type": "application/json",
+    "X-Telegram-Init-Data": initData,
   };
-  ui.notifyPermission.textContent = `Статус: ${map[Notification.permission] ?? "неизвестно"}`;
 }
 
-function setupSettingsUi() {
-  ui.timezoneSelect.value = state.settings.timezone;
-  ui.notificationsEnabled.checked = state.settings.notificationsEnabled;
-  ui.notifyBefore.value = String(state.settings.notifyBeforeMinutes);
-  updatePermissionStatus();
-}
-
-function setFilter(filter) {
-  state.filter = filter;
-  for (const btn of ui.filterButtons) {
-    btn.classList.toggle("active", btn.dataset.filter === filter);
-  }
-  render();
-}
-
-function getVisibleTasks() {
-  if (state.filter === "active") {
-    return state.tasks.filter((task) => !task.done);
-  }
-  if (state.filter === "done") {
-    return state.tasks.filter((task) => task.done);
-  }
-  return state.tasks;
-}
-
-function formatReminderDate(timestamp) {
-  return new Intl.DateTimeFormat("ru-RU", {
-    timeZone: state.settings.timezone,
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(timestamp));
-}
-
-function reminderMeta(task) {
-  if (!task.reminderAt) return "Без напоминания";
-  const when = formatReminderDate(task.reminderAt);
-  const lead = state.settings.notifyBeforeMinutes;
-  if (lead > 0) return `Напоминание: ${when} (за ${lead} мин)`;
-  return `Напоминание: ${when}`;
-}
-
-function render() {
-  const visibleTasks = getVisibleTasks();
-  ui.taskList.innerHTML = "";
-
-  for (const task of visibleTasks) {
-    const li = document.createElement("li");
-    li.className = "task-item";
-    li.innerHTML = `
-      <input type="checkbox" data-action="toggle" data-id="${task.id}" ${task.done ? "checked" : ""}>
-      <div class="task-main">
-        <div class="task-text ${task.done ? "done" : ""}">${escapeHtml(task.text)}</div>
-        <div class="task-meta">${escapeHtml(reminderMeta(task))}</div>
-      </div>
-      <button type="button" class="icon-btn" data-action="edit" data-id="${task.id}">Изм.</button>
-      <button type="button" class="icon-btn danger" data-action="delete" data-id="${task.id}">Удалить</button>
-    `;
-    ui.taskList.appendChild(li);
+async function apiRequest(path, options = {}) {
+  if (!BACKEND_MODE) {
+    throw new Error("Backend API не подключен.");
   }
 
-  const activeCount = state.tasks.filter((task) => !task.done).length;
-  ui.stats.textContent = `${activeCount} активных из ${state.tasks.length}`;
-  ui.emptyState.style.display = visibleTasks.length === 0 ? "block" : "none";
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: options.method || "GET",
+    headers: apiHeaders(),
+    body: options.body ? JSON.stringify(options.body) : undefined,
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data.ok === false) {
+    throw new Error(data.error || `HTTP ${response.status}`);
+  }
+  return data;
 }
 
 function getZoneParts(timestamp, timeZone) {
@@ -254,9 +194,7 @@ function getZoneParts(timestamp, timeZone) {
   const parts = formatter.formatToParts(new Date(timestamp));
   const map = {};
   for (const part of parts) {
-    if (part.type !== "literal") {
-      map[part.type] = part.value;
-    }
+    if (part.type !== "literal") map[part.type] = part.value;
   }
   return {
     year: Number(map.year),
@@ -290,8 +228,241 @@ function zonedLocalToUtcMs(datetimeValue, timeZone) {
   return result;
 }
 
-function formatForReminderPrompt(timestamp) {
-  const p = getZoneParts(timestamp, state.settings.timezone);
+function formatReminderDate(timestamp) {
+  return new Intl.DateTimeFormat("ru-RU", {
+    timeZone: state.settings.timezone,
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(timestamp));
+}
+
+function reminderMeta(task) {
+  if (!task.reminderAt) return "Без напоминания";
+  const when = formatReminderDate(task.reminderAt);
+  const lead = state.settings.notifyBeforeMinutes;
+  if (lead > 0) return `Напоминание: ${when} (за ${lead} мин)`;
+  return `Напоминание: ${when}`;
+}
+
+function getVisibleTasks() {
+  if (state.filter === "active") return state.tasks.filter((task) => !task.done);
+  if (state.filter === "done") return state.tasks.filter((task) => task.done);
+  return state.tasks;
+}
+
+function render() {
+  const visibleTasks = getVisibleTasks();
+  ui.taskList.innerHTML = "";
+
+  for (const task of visibleTasks) {
+    const li = document.createElement("li");
+    li.className = "task-item";
+    li.innerHTML = `
+      <input type="checkbox" data-action="toggle" data-id="${task.id}" ${task.done ? "checked" : ""}>
+      <div class="task-main">
+        <div class="task-text ${task.done ? "done" : ""}">${escapeHtml(task.text)}</div>
+        <div class="task-meta">${escapeHtml(reminderMeta(task))}</div>
+      </div>
+      <button type="button" class="icon-btn" data-action="edit" data-id="${task.id}">Изм.</button>
+      <button type="button" class="icon-btn danger" data-action="delete" data-id="${task.id}">Удалить</button>
+    `;
+    ui.taskList.appendChild(li);
+  }
+
+  const activeCount = state.tasks.filter((task) => !task.done).length;
+  ui.stats.textContent = `${activeCount} активных из ${state.tasks.length}`;
+  ui.emptyState.style.display = visibleTasks.length === 0 ? "block" : "none";
+}
+
+function updateClock() {
+  const now = new Date();
+  ui.clockTime.textContent = new Intl.DateTimeFormat("ru-RU", {
+    timeZone: state.settings.timezone,
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(now);
+  ui.clockDate.textContent = new Intl.DateTimeFormat("ru-RU", {
+    timeZone: state.settings.timezone,
+    weekday: "long",
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  }).format(now);
+  updateProfileAndGreeting();
+}
+
+function normalizeTask(raw) {
+  const text = typeof raw?.text === "string" ? raw.text.trim().slice(0, MAX_TEXT_LENGTH) : "";
+  if (!text) return null;
+
+  return {
+    id: String(raw.id),
+    text,
+    done: Boolean(raw.is_done ?? raw.done),
+    reminderAt: Number.isFinite(Number(raw.reminder_at_ms ?? raw.reminderAt))
+      ? Number(raw.reminder_at_ms ?? raw.reminderAt)
+      : null,
+  };
+}
+
+function normalizeSettings(raw) {
+  return {
+    timezone: timezoneMap.has(raw?.timezone) ? raw.timezone : "Europe/Moscow",
+    notifyBeforeMinutes: clampInt(raw?.notify_before_minutes ?? raw?.notifyBeforeMinutes, 0, 120, 0),
+    chatNotificationsEnabled: Boolean(raw?.chat_notifications_enabled ?? raw?.chatNotificationsEnabled ?? true),
+  };
+}
+
+function applySettingsToUi() {
+  ui.timezoneSelect.value = state.settings.timezone;
+  ui.notifyBefore.value = String(state.settings.notifyBeforeMinutes);
+  ui.chatNotifyEnabled.checked = state.settings.chatNotificationsEnabled;
+}
+
+function parseReminderFromInput() {
+  const raw = ui.reminderInput.value.trim();
+  if (!raw) return { ok: true, value: null };
+  const ms = zonedLocalToUtcMs(raw, state.settings.timezone);
+  if (!Number.isFinite(ms)) {
+    return { ok: false, message: "Некорректная дата напоминания." };
+  }
+  if (ms < Date.now()) {
+    return { ok: false, message: "Напоминание не может быть в прошлом." };
+  }
+  return { ok: true, value: ms };
+}
+
+async function loadBackendData() {
+  try {
+    setSyncStatus("загрузка...");
+    const [profileData, settingsData, tasksData] = await Promise.all([
+      apiRequest("/api/profile"),
+      apiRequest("/api/settings"),
+      apiRequest("/api/tasks"),
+    ]);
+
+    if (profileData.user) {
+      const u = profileData.user;
+      if (!telegramUser && u.first_name) {
+        ui.userLabel.textContent = [u.first_name, u.last_name].filter(Boolean).join(" ").trim();
+      }
+    }
+
+    state.settings = normalizeSettings(settingsData.settings || {});
+    state.tasks = Array.isArray(tasksData.tasks) ? tasksData.tasks.map(normalizeTask).filter(Boolean) : [];
+    applySettingsToUi();
+    render();
+    updateClock();
+    setSyncStatus("подключено");
+  } catch (error) {
+    setSyncStatus(error.message, true);
+    showToast(`Ошибка синхронизации: ${error.message}`, true);
+  }
+}
+
+function loadLocalData() {
+  const rawSettings = loadJson(SETTINGS_KEY, state.settings);
+  state.settings = normalizeSettings(rawSettings);
+  const rawTasks = loadJson(TASKS_KEY, []);
+  state.tasks = Array.isArray(rawTasks) ? rawTasks.map(normalizeTask).filter(Boolean) : [];
+
+  applySettingsToUi();
+  render();
+  updateClock();
+  setSyncStatus("локально (без чата)");
+}
+
+async function saveSettings() {
+  if (BACKEND_MODE) {
+    await apiRequest("/api/settings", {
+      method: "PUT",
+      body: {
+        timezone: state.settings.timezone,
+        notify_before_minutes: state.settings.notifyBeforeMinutes,
+        chat_notifications_enabled: state.settings.chatNotificationsEnabled,
+      },
+    });
+    return;
+  }
+  saveSettingsLocal();
+}
+
+async function addTask() {
+  const text = ui.taskInput.value.trim();
+  if (!text) {
+    showToast("Введите текст задачи.", true);
+    return;
+  }
+
+  const reminder = parseReminderFromInput();
+  if (!reminder.ok) {
+    showToast(reminder.message, true);
+    return;
+  }
+
+  try {
+    if (BACKEND_MODE) {
+      await apiRequest("/api/tasks", {
+        method: "POST",
+        body: { text: text.slice(0, MAX_TEXT_LENGTH), reminder_at_ms: reminder.value },
+      });
+      await loadBackendData();
+    } else {
+      state.tasks.unshift({
+        id: crypto.randomUUID(),
+        text: text.slice(0, MAX_TEXT_LENGTH),
+        done: false,
+        reminderAt: reminder.value,
+      });
+      saveTasksLocal();
+      render();
+    }
+    ui.taskInput.value = "";
+    ui.reminderInput.value = "";
+  } catch (error) {
+    showToast(error.message, true);
+  }
+}
+
+async function toggleTask(taskId, done) {
+  try {
+    if (BACKEND_MODE) {
+      await apiRequest(`/api/tasks/${taskId}`, { method: "PATCH", body: { is_done: done } });
+      await loadBackendData();
+    } else {
+      const task = state.tasks.find((item) => item.id === taskId);
+      if (!task) return;
+      task.done = done;
+      saveTasksLocal();
+      render();
+    }
+  } catch (error) {
+    showToast(error.message, true);
+  }
+}
+
+async function deleteTask(taskId) {
+  try {
+    if (BACKEND_MODE) {
+      await apiRequest(`/api/tasks/${taskId}`, { method: "DELETE" });
+      await loadBackendData();
+    } else {
+      state.tasks = state.tasks.filter((item) => item.id !== taskId);
+      saveTasksLocal();
+      render();
+    }
+  } catch (error) {
+    showToast(error.message, true);
+  }
+}
+
+function formatPromptReminder(ms) {
+  if (!ms) return "";
+  const p = getZoneParts(ms, state.settings.timezone);
   const y = String(p.year);
   const m = String(p.month).padStart(2, "0");
   const d = String(p.day).padStart(2, "0");
@@ -300,226 +471,100 @@ function formatForReminderPrompt(timestamp) {
   return `${y}-${m}-${d} ${h}:${min}`;
 }
 
-function parseReminderPromptValue(value) {
-  const trimmed = value.trim();
+function parsePromptReminder(text) {
+  const trimmed = text.trim();
   if (!trimmed) return { ok: true, value: null };
-
   const normalized = trimmed.includes("T") ? trimmed : trimmed.replace(" ", "T");
-  const timestamp = zonedLocalToUtcMs(normalized, state.settings.timezone);
-  if (!Number.isFinite(timestamp)) {
-    return { ok: false, message: "Неверный формат времени. Используйте ГГГГ-ММ-ДД ЧЧ:ММ." };
-  }
-  return { ok: true, value: timestamp };
+  const ms = zonedLocalToUtcMs(normalized, state.settings.timezone);
+  if (!Number.isFinite(ms)) return { ok: false, message: "Неверный формат даты." };
+  if (ms < Date.now()) return { ok: false, message: "Напоминание не может быть в прошлом." };
+  return { ok: true, value: ms };
 }
 
-function currentReminderInputToUtc() {
-  const raw = ui.reminderInput.value.trim();
-  if (!raw) return { ok: true, value: null };
-
-  const timestamp = zonedLocalToUtcMs(raw, state.settings.timezone);
-  if (!Number.isFinite(timestamp)) {
-    return { ok: false, message: "Некорректная дата напоминания." };
-  }
-  return { ok: true, value: timestamp };
-}
-
-function addTask() {
-  const text = ui.taskInput.value.trim();
-  if (!text) {
-    showToast("Введите текст задачи.", true);
-    return;
-  }
-
-  const reminder = currentReminderInputToUtc();
-  if (!reminder.ok) {
-    showToast(reminder.message, true);
-    return;
-  }
-  if (reminder.value && reminder.value < Date.now()) {
-    showToast("Напоминание не может быть в прошлом.", true);
-    return;
-  }
-
-  state.tasks.unshift({
-    id: crypto.randomUUID(),
-    text: text.slice(0, MAX_TEXT_LENGTH),
-    done: false,
-    createdAt: Date.now(),
-    reminderAt: reminder.value,
-    notifiedFor: null,
-  });
-  saveTasks();
-  ui.taskInput.value = "";
-  ui.reminderInput.value = "";
-  render();
-}
-
-function toggleTask(taskId, done) {
-  const task = state.tasks.find((item) => item.id === taskId);
-  if (!task) return;
-
-  task.done = done;
-  if (done) {
-    task.notifiedFor = null;
-  }
-  saveTasks();
-  render();
-}
-
-function deleteTask(taskId) {
-  state.tasks = state.tasks.filter((item) => item.id !== taskId);
-  saveTasks();
-  render();
-}
-
-function editTask(taskId) {
+async function editTask(taskId) {
   const task = state.tasks.find((item) => item.id === taskId);
   if (!task) return;
 
   const nextText = prompt("Изменить текст задачи:", task.text);
   if (nextText === null) return;
-
-  const trimmedText = nextText.trim();
-  if (!trimmedText) {
+  const text = nextText.trim();
+  if (!text) {
     showToast("Текст задачи не может быть пустым.", true);
     return;
   }
 
-  const zoneLabel = timezoneMap.get(state.settings.timezone) || state.settings.timezone;
-  const currentReminder = task.reminderAt ? formatForReminderPrompt(task.reminderAt) : "";
-  const rawReminder = prompt(
-    `Напоминание (${zoneLabel}). Формат: ГГГГ-ММ-ДД ЧЧ:ММ. Пусто - убрать:`,
-    currentReminder,
-  );
+  const current = formatPromptReminder(task.reminderAt);
+  const reminderRaw = prompt("Напоминание (ГГГГ-ММ-ДД ЧЧ:ММ, пусто - убрать):", current);
+  if (reminderRaw === null) return;
 
-  let nextReminder = task.reminderAt;
-  if (rawReminder !== null) {
-    const parsed = parseReminderPromptValue(rawReminder);
-    if (!parsed.ok) {
-      showToast(parsed.message, true);
-      return;
-    }
-    if (parsed.value && parsed.value < Date.now()) {
-      showToast("Напоминание не может быть в прошлом.", true);
-      return;
-    }
-    nextReminder = parsed.value;
-  }
-
-  task.text = trimmedText.slice(0, MAX_TEXT_LENGTH);
-  task.reminderAt = nextReminder;
-  task.notifiedFor = null;
-  saveTasks();
-  render();
-}
-
-function clearDone() {
-  state.tasks = state.tasks.filter((task) => !task.done);
-  saveTasks();
-  render();
-}
-
-function updateClock() {
-  const now = new Date();
-  const timeText = new Intl.DateTimeFormat("ru-RU", {
-    timeZone: state.settings.timezone,
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  }).format(now);
-  const dateText = new Intl.DateTimeFormat("ru-RU", {
-    timeZone: state.settings.timezone,
-    weekday: "long",
-    day: "2-digit",
-    month: "long",
-    year: "numeric",
-  }).format(now);
-
-  ui.clockTime.textContent = timeText;
-  ui.clockDate.textContent = dateText;
-}
-
-function sendSystemNotification(title, body, tag) {
-  if (!("Notification" in window)) return false;
-  if (Notification.permission !== "granted") return false;
-
-  try {
-    new Notification(title, { body, tag });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function emitReminder(task) {
-  const when = formatReminderDate(task.reminderAt);
-  const title = "Напоминание о задаче";
-  const body = `${task.text}\n${when}`;
-  const sentSystem = sendSystemNotification(title, body, `todo-reminder-${task.id}`);
-
-  if (!sentSystem) {
-    showToast(`Напоминание: ${task.text}`);
+  const parsed = parsePromptReminder(reminderRaw);
+  if (!parsed.ok) {
+    showToast(parsed.message, true);
     return;
   }
-  showToast(`Системное уведомление: ${task.text}`);
+
+  try {
+    if (BACKEND_MODE) {
+      await apiRequest(`/api/tasks/${taskId}`, {
+        method: "PATCH",
+        body: { text: text.slice(0, MAX_TEXT_LENGTH), reminder_at_ms: parsed.value },
+      });
+      await loadBackendData();
+    } else {
+      task.text = text.slice(0, MAX_TEXT_LENGTH);
+      task.reminderAt = parsed.value;
+      saveTasksLocal();
+      render();
+    }
+  } catch (error) {
+    showToast(error.message, true);
+  }
 }
 
-function checkReminders() {
-  if (!state.settings.notificationsEnabled) return;
+async function clearDone() {
+  const doneTasks = state.tasks.filter((task) => task.done);
+  if (doneTasks.length === 0) return;
 
-  const now = Date.now();
-  const leadMs = state.settings.notifyBeforeMinutes * 60_000;
-  let changed = false;
-
-  for (const task of state.tasks) {
-    if (task.done || !task.reminderAt) continue;
-
-    const triggerAt = task.reminderAt - leadMs;
-    if (now < triggerAt) {
-      continue;
+  try {
+    if (BACKEND_MODE) {
+      for (const task of doneTasks) {
+        await apiRequest(`/api/tasks/${task.id}`, { method: "DELETE" });
+      }
+      await loadBackendData();
+    } else {
+      state.tasks = state.tasks.filter((task) => !task.done);
+      saveTasksLocal();
+      render();
     }
-
-    if (task.notifiedFor === triggerAt) {
-      continue;
-    }
-
-    emitReminder(task);
-    task.notifiedFor = triggerAt;
-    changed = true;
-  }
-
-  if (changed) {
-    saveTasks();
-    render();
+  } catch (error) {
+    showToast(error.message, true);
   }
 }
 
 function bindEvents() {
   ui.addBtn.addEventListener("click", addTask);
   ui.taskInput.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
-      addTask();
-    }
+    if (event.key === "Enter") addTask();
   });
 
   ui.clearDoneBtn.addEventListener("click", clearDone);
   for (const filterBtn of ui.filterButtons) {
-    filterBtn.addEventListener("click", () => setFilter(filterBtn.dataset.filter));
+    filterBtn.addEventListener("click", () => {
+      state.filter = filterBtn.dataset.filter;
+      for (const b of ui.filterButtons) b.classList.toggle("active", b === filterBtn);
+      render();
+    });
   }
 
   ui.taskList.addEventListener("click", (event) => {
     const target = event.target;
     if (!(target instanceof HTMLElement)) return;
-
     const action = target.dataset.action;
     const taskId = target.dataset.id;
     if (!action || !taskId) return;
 
-    if (action === "delete") {
-      deleteTask(taskId);
-    } else if (action === "edit") {
-      editTask(taskId);
-    }
+    if (action === "delete") deleteTask(taskId);
+    if (action === "edit") editTask(taskId);
   });
 
   ui.taskList.addEventListener("change", (event) => {
@@ -529,71 +574,71 @@ function bindEvents() {
     toggleTask(target.dataset.id, target.checked);
   });
 
-  ui.timezoneSelect.addEventListener("change", () => {
+  ui.timezoneSelect.addEventListener("change", async () => {
     const value = ui.timezoneSelect.value;
     if (!timezoneMap.has(value)) return;
     state.settings.timezone = value;
-    saveSettings();
     updateClock();
     render();
-  });
-
-  ui.notificationsEnabled.addEventListener("change", () => {
-    state.settings.notificationsEnabled = ui.notificationsEnabled.checked;
-    saveSettings();
-    if (state.settings.notificationsEnabled && "Notification" in window && Notification.permission === "default") {
-      showToast("Нажмите 'Разрешить уведомления', чтобы включить системные уведомления.");
+    try {
+      await saveSettings();
+      setSyncStatus(BACKEND_MODE ? "подключено" : "локально");
+    } catch (error) {
+      showToast(error.message, true);
     }
   });
 
-  ui.notifyBefore.addEventListener("change", () => {
+  ui.notifyBefore.addEventListener("change", async () => {
     state.settings.notifyBeforeMinutes = clampInt(ui.notifyBefore.value, 0, 120, 0);
     ui.notifyBefore.value = String(state.settings.notifyBeforeMinutes);
-    saveSettings();
-    checkReminders();
+    try {
+      await saveSettings();
+      setSyncStatus(BACKEND_MODE ? "подключено" : "локально");
+    } catch (error) {
+      showToast(error.message, true);
+    }
     render();
   });
 
-  ui.requestNotifyBtn.addEventListener("click", async () => {
-    if (!("Notification" in window)) {
-      showToast("Браузер не поддерживает уведомления.", true);
-      return;
-    }
-
+  ui.chatNotifyEnabled.addEventListener("change", async () => {
+    state.settings.chatNotificationsEnabled = ui.chatNotifyEnabled.checked;
     try {
-      await Notification.requestPermission();
-      updatePermissionStatus();
-      if (Notification.permission === "granted") {
-        showToast("Уведомления разрешены.");
+      await saveSettings();
+      if (state.settings.chatNotificationsEnabled) {
+        showToast("Уведомления в чат включены.");
       } else {
-        showToast("Разрешение на уведомления не выдано.", true);
+        showToast("Уведомления в чат отключены.");
       }
-    } catch {
-      showToast("Не удалось запросить разрешение на уведомления.", true);
+    } catch (error) {
+      showToast(error.message, true);
     }
   });
 }
 
-function init() {
+async function init() {
   if (tg) {
     tg.ready();
     tg.expand();
   }
 
   populateTimezones();
-  formatUserLabel();
+  ui.modeHint.textContent = BACKEND_MODE
+    ? `Режим: Telegram + backend (${API_BASE_URL})`
+    : "Режим: локальный (без backend, уведомления в чат недоступны)";
 
-  state.settings = loadSettings();
-  state.tasks = loadTasks();
+  if (BACKEND_MODE) {
+    await loadBackendData();
+  } else {
+    loadLocalData();
+    ui.chatNotifyEnabled.checked = false;
+    ui.chatNotifyEnabled.disabled = true;
+  }
 
-  setupSettingsUi();
   bindEvents();
-  render();
-  updateClock();
-  checkReminders();
-
+  updateProfileAndGreeting();
   setInterval(updateClock, 1000);
-  setInterval(checkReminders, 15_000);
 }
 
-init();
+init().catch((error) => {
+  showToast(`Ошибка запуска: ${error.message}`, true);
+});

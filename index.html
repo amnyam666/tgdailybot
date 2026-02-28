@@ -4,14 +4,16 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Список задач</title>
-  <meta name="description" content="Минималистичный список задач с напоминаниями и выбором часового пояса РФ">
+  <meta name="description" content="Список задач с напоминаниями в чат Telegram">
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
   <main class="app">
     <header class="app-header card">
       <h1>Список задач</h1>
-      <p id="user-label" class="subtitle">Локальный режим</p>
+      <p id="user-label" class="subtitle">Профиль загружается...</p>
+      <p id="greeting-text" class="greeting">Добрый день</p>
+      <p id="mode-hint" class="subtitle">Режим: не определен</p>
     </header>
 
     <section class="card clock-panel">
@@ -29,18 +31,15 @@
       <h2>Настройки уведомлений</h2>
       <div class="settings-grid">
         <label class="check-row">
-          <input id="notifications-enabled" type="checkbox">
-          <span>Включить уведомления</span>
+          <input id="chat-notify-enabled" type="checkbox">
+          <span>Напоминать в чат бота</span>
         </label>
         <div class="field">
           <label for="notify-before">Напоминать за (мин)</label>
           <input id="notify-before" type="number" min="0" max="120" step="1" value="0">
         </div>
       </div>
-      <div class="settings-actions">
-        <button id="request-notify-btn" class="ghost-btn" type="button">Разрешить уведомления</button>
-        <p id="notify-permission" class="subtitle">Статус: неизвестно</p>
-      </div>
+      <p id="sync-status" class="subtitle">Синхронизация: ...</p>
     </section>
 
     <section class="card compose">
