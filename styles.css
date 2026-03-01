@@ -50,13 +50,18 @@ body {
 }
 
 .app-header h1 {
-  margin: 0 0 6px;
+  margin: 0;
   line-height: 1.1;
   font-size: 30px;
 }
 
+.app-title {
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+
 .greeting {
-  margin: 8px 0 4px;
+  margin: 10px 0 0;
   font-size: 18px;
   font-weight: 600;
   color: #1d4f87;

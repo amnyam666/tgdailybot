@@ -52,7 +52,6 @@ const RU_TIMEZONES = [
 const timezoneMap = new Map(RU_TIMEZONES.map((zone) => [zone.id, zone.label]));
 
 const ui = {
-  userLabel: document.getElementById("user-label"),
   greetingText: document.getElementById("greeting-text"),
   clockTime: document.getElementById("clock-time"),
   clockDate: document.getElementById("clock-date"),
@@ -142,28 +141,23 @@ function getCurrentHour(timezone) {
 
 function getGreeting(timezone) {
   const hour = getCurrentHour(timezone);
-  if (hour >= 6 && hour < 12) return "Доброе утро!";
-  if (hour >= 12 && hour < 17) return "Добрый День!";
-  if (hour >= 17 && hour < 24) return "Добрый Вечер!";
-  return "Доброй ночи!";
+  if (hour >= 17 && hour < 24) return "Добрый вечер";
+  if (hour >= 0 && hour < 6) return "Доброй ночи";
+  return "Добрый день";
 }
 
 function updateProfileAndGreeting() {
   const user = getTelegramUser();
-  const username = user?.username ? `@${user.username}` : "";
+  const username = String(user?.username || "").replace(/^@+/, "").trim();
   const fullName = [user?.first_name, user?.last_name].filter(Boolean).join(" ").trim();
 
-  if (ui.userLabel) {
-    ui.userLabel.textContent = username || fullName || "";
-  }
-
   if (!user) {
-    ui.greetingText.textContent = getGreeting(state.settings.timezone);
+    ui.greetingText.textContent = `${getGreeting(state.settings.timezone)}!`;
     return;
   }
 
-  const nickname = username || user.first_name || `ID ${user.id}`;
-  ui.greetingText.textContent = `${getGreeting(state.settings.timezone)} ${nickname}`;
+  const nickname = username || fullName || user.first_name || `ID ${user.id}`;
+  ui.greetingText.textContent = `${getGreeting(state.settings.timezone)}, ${nickname}!`;
 }
 
 function populateTimezones() {
